@@ -1,9 +1,14 @@
 "use client";
-import { useEffect, useState } from "react";
+
+import { useEffect, useState, useCallback } from "react";
 import { createClient } from "@/lib/supabase/client";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
-import { Shield, Users, Calendar, CheckCircle, XCircle } from "lucide-react";
+import {
+  Card,
+  CardContent,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import { Shield, Users, Calendar } from "lucide-react";
 
 interface Family {
   id: string;
@@ -14,56 +19,93 @@ interface Family {
   member_count: number;
 }
 
+interface FamilyResponse {
+  id: string;
+  name: string;
+  slug: string;
+  migration_status: string;
+  created_at: string;
+  family_members?: Array<{
+    count: number;
+  }>;
+}
+
 export default function ManageFamiliesPage() {
   const [families, setFamilies] = useState<Family[]>([]);
   const [loading, setLoading] = useState(true);
+
   const supabase = createClient();
 
-  useEffect(() => {
-    fetchFamilies();
-  }, []);
-
-  const fetchFamilies = async () => {
+  const fetchFamilies = useCallback(async () => {
     setLoading(true);
+
     try {
       const { data, error } = await supabase
         .from("families")
-        .select(`
+        .select(
+          `
           *,
           family_members(count)
-        `)
+        `
+        )
         .order("created_at", { ascending: false });
 
-      if (error) throw error;
+      if (error) {
+        throw error;
+      }
 
-      const familiesWithCount = (data || []).map((family: any) => ({
-        ...family,
-        member_count: family.family_members?.[0]?.count || 0
-      }));
+      const familiesWithCount: Family[] = ((data as FamilyResponse[]) || []).map(
+        (family) => ({
+          id: family.id,
+          name: family.name,
+          slug: family.slug,
+          migration_status: family.migration_status,
+          created_at: family.created_at,
+          member_count: family.family_members?.[0]?.count ?? 0,
+        })
+      );
 
       setFamilies(familiesWithCount);
-    } catch (error) {
+    } catch (error: unknown) {
       console.error("Error fetching families:", error);
     } finally {
       setLoading(false);
     }
-  };
+  }, [supabase]);
+
+  useEffect(() => {
+    void fetchFamilies();
+  }, [fetchFamilies]);
 
   const getStatusBadge = (status: string) => {
     switch (status) {
       case "verified":
-        return <span className="px-2 py-1 rounded-full text-xs bg-green-100 text-green-700">Verified</span>;
+        return (
+          <span className="rounded-full bg-green-100 px-2 py-1 text-xs text-green-700">
+            Verified
+          </span>
+        );
+
       case "pending_verification":
-        return <span className="px-2 py-1 rounded-full text-xs bg-yellow-100 text-yellow-700">Pending</span>;
+        return (
+          <span className="rounded-full bg-yellow-100 px-2 py-1 text-xs text-yellow-700">
+            Pending
+          </span>
+        );
+
       default:
-        return <span className="px-2 py-1 rounded-full text-xs bg-gray-100 text-gray-700">Draft</span>;
+        return (
+          <span className="rounded-full bg-gray-100 px-2 py-1 text-xs text-gray-700">
+            Draft
+          </span>
+        );
     }
   };
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center h-96">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
+      <div className="flex h-96 items-center justify-center">
+        <div className="h-12 w-12 animate-spin rounded-full border-b-2 border-blue-600" />
       </div>
     );
   }
@@ -71,39 +113,59 @@ export default function ManageFamiliesPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-3xl font-bold text-gray-900">Manage Families</h1>
-        <p className="text-gray-600 mt-1">View and manage all family groups in the system</p>
+        <h1 className="text-3xl font-bold text-gray-900">
+          Manage Families
+        </h1>
+        <p className="mt-1 text-gray-600">
+          View and manage all family groups in the system
+        </p>
       </div>
 
       <div className="grid gap-4">
         {families.length === 0 ? (
           <Card>
             <CardContent className="py-8">
-              <p className="text-center text-gray-500">No families created yet</p>
+              <p className="text-center text-gray-500">
+                No families created yet
+              </p>
             </CardContent>
           </Card>
         ) : (
           families.map((family) => (
-            <Card key={family.id} className="hover:shadow-md transition-shadow">
+            <Card
+              key={family.id}
+              className="transition-shadow hover:shadow-md"
+            >
               <CardHeader className="flex flex-row items-center justify-between">
                 <div>
                   <CardTitle className="flex items-center gap-2">
                     <Shield className="h-5 w-5 text-purple-600" />
                     {family.name}
                   </CardTitle>
-                  <p className="text-sm text-gray-500 mt-1">Slug: {family.slug}</p>
+
+                  <p className="mt-1 text-sm text-gray-500">
+                    Slug: {family.slug}
+                  </p>
                 </div>
+
                 {getStatusBadge(family.migration_status)}
               </CardHeader>
+
               <CardContent>
                 <div className="grid grid-cols-2 gap-4">
                   <div className="flex items-center gap-2 text-sm">
                     <Users className="h-4 w-4 text-gray-400" />
                     <span>{family.member_count} Members</span>
                   </div>
+
                   <div className="flex items-center gap-2 text-sm">
                     <Calendar className="h-4 w-4 text-gray-400" />
-                    <span>Created: {new Date(family.created_at).toLocaleDateString()}</span>
+                    <span>
+                      Created:{" "}
+                      {new Date(
+                        family.created_at
+                      ).toLocaleDateString()}
+                    </span>
                   </div>
                 </div>
               </CardContent>

@@ -1,12 +1,34 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
 import { 
-  Users, Building2, FileText, Activity, CheckCircle, XCircle, 
-  AlertCircle, DollarSign, TrendingUp, Calendar, Clock 
+  Users, Building2, FileText, Activity, CheckCircle, 
+  AlertCircle, DollarSign, TrendingUp
 } from "lucide-react";
+
+// Interfaces for type safety
+interface ActivityProfile {
+  full_name?: string;
+  email?: string;
+}
+
+interface ActivityItem {
+  id: string;
+  message: string;
+  created_at: string;
+  profiles?: ActivityProfile;
+}
+
+interface Family {
+  id: string;
+  name: string;
+  description?: string;
+  currency?: string;
+  transparency_mode?: string;
+  migration_status?: string;
+  created_at: string;
+}
 
 export default function AdminPage() {
   const [stats, setStats] = useState({
@@ -19,16 +41,12 @@ export default function AdminPage() {
     totalAmountCollected: 0,
     activeLoans: 0
   });
-  const [recentActivities, setRecentActivities] = useState<any[]>([]);
-  const [families, setFamilies] = useState<any[]>([]);
+  const [recentActivities, setRecentActivities] = useState<ActivityItem[]>([]);
+  const [families, setFamilies] = useState<Family[]>([]);
   const [loading, setLoading] = useState(true);
   const supabase = createClient();
 
-  useEffect(() => {
-    fetchAdminData();
-  }, []);
-
-  const fetchAdminData = async () => {
+  const fetchAdminData = useCallback(async () => {
     setLoading(true);
     try {
       // Fetch all families
@@ -58,7 +76,7 @@ export default function AdminPage() {
 
       if (contributionsError) throw contributionsError;
 
-      const totalContributionsAmount = contributions?.reduce((sum, c) => sum + (c.amount || 0), 0) || 0;
+      const totalContributionsAmount = contributions?.reduce((sum: number, c: { amount: number }) => sum + (c.amount || 0), 0) || 0;
       const totalContributionsCount = contributions?.length || 0;
 
       // Get loans data
@@ -69,7 +87,7 @@ export default function AdminPage() {
       if (loansError) throw loansError;
 
       const totalLoansCount = loans?.length || 0;
-      const activeLoansCount = loans?.filter(l => l.status === "active").length || 0;
+      const activeLoansCount = loans?.filter((l: { status: string }) => l.status === "active").length || 0;
 
       // Get pending verifications
       const { count: pendingCount } = await supabase
@@ -108,12 +126,16 @@ export default function AdminPage() {
       
       setRecentActivities(activities || []);
       
-    } catch (error) {
+    } catch (error: unknown) {
       console.error("Error fetching admin data:", error);
     } finally {
       setLoading(false);
     }
-  };
+  }, [supabase]);
+
+  useEffect(() => {
+    void fetchAdminData();
+  }, [fetchAdminData]);
 
   const statCards = [
     { 
@@ -274,29 +296,29 @@ export default function AdminPage() {
                         )}
                       </div>
                     </td>
-                    <td className="py-3 px-4 text-gray-600">{family.currency}</td>
+                    <td className="py-3 px-4 text-gray-600">{family.currency || 'UGX'}</td>
                     <td className="py-3 px-4">
                       <span className={`px-2 py-1 rounded-full text-xs font-medium ${
                         family.transparency_mode === 'full' ? 'bg-green-100 text-green-700' :
                         family.transparency_mode === 'limited' ? 'bg-yellow-100 text-yellow-700' :
                         'bg-gray-100 text-gray-700'
                       }`}>
-                        {family.transparency_mode}
+                        {family.transparency_mode || 'private'}
                       </span>
-                    </td>
+                     </td>
                     <td className="py-3 px-4">
                       <span className={`px-2 py-1 rounded-full text-xs font-medium ${
                         family.migration_status === 'verified' ? 'bg-green-100 text-green-700' :
                         family.migration_status === 'pending_verification' ? 'bg-yellow-100 text-yellow-700' :
                         'bg-gray-100 text-gray-700'
                       }`}>
-                        {family.migration_status}
+                        {family.migration_status || 'draft'}
                       </span>
-                    </td>
+                     </td>
                     <td className="py-3 px-4 text-sm text-gray-500">
                       {new Date(family.created_at).toLocaleDateString()}
-                    </td>
-                  </tr>
+                     </td>
+                   </tr>
                 ))}
                 {families.length === 0 && (
                   <tr>

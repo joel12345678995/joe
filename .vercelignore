@@ -1,0 +1,8 @@
+# Ignore Supabase function sources not needed for Vercel Next app build
+supabase/functions
+
+# Node build artifacts
+.next
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
