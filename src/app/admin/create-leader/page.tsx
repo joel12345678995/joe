@@ -1,196 +1,237 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
-  Card,
-  CardContent,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
+  Users,
+  Building2,
+  FileText,
+  Activity,
+  DollarSign,
+  TrendingUp,
+} from "lucide-react";
 
-export default function CreateLeaderPage() {
-  const [email, setEmail] = useState("");
-  const [fullName, setFullName] = useState("");
-  const [password, setPassword] = useState("");
-  const [familyName, setFamilyName] = useState("");
-  const [loading, setLoading] = useState(false);
-  const [message, setMessage] = useState("");
+type Family = {
+  id: string;
+  name: string;
+  description?: string;
+  currency?: string;
+  transparency_mode?: string;
+  migration_status?: string;
+  created_at: string;
+};
 
+type ActivityItem = {
+  id: string;
+  message: string;
+  created_at: string;
+};
+
+export default function AdminPage() {
   const supabase = createClient();
 
-  const createGroupLeader = async () => {
-    if (!familyName || !fullName || !email || !password) {
-      setMessage("❌ Please fill in all fields.");
-      return;
-    }
+  const [loading, setLoading] = useState(true);
+  const [families, setFamilies] = useState<Family[]>([]);
+  const [activities, setActivities] = useState<ActivityItem[]>([]);
 
-    if (password.length < 6) {
-      setMessage("❌ Password must be at least 6 characters.");
-      return;
-    }
+  const [stats, setStats] = useState({
+    totalFamilies: 0,
+    totalMembers: 0,
+    totalContributions: 0,
+    totalLoans: 0,
+    pendingVerifications: 0,
+    completedMigrations: 0,
+    totalAmountCollected: 0,
+    activeLoans: 0,
+  });
 
+  useEffect(() => {
+    void loadData();
+  }, []);
+
+  const loadData = async () => {
     setLoading(true);
-    setMessage("");
 
     try {
-      // Create user
-      const { data: userData, error: signUpError } =
-        await supabase.auth.signUp({
-          email,
-          password,
-          options: {
-            data: {
-              full_name: fullName,
-              role: "family_admin",
-            },
-          },
-        });
-
-      if (signUpError) {
-        throw signUpError;
-      }
-
-      if (!userData.user) {
-        throw new Error("User creation failed.");
-      }
-
-      // Create family
-      const { data: family, error: familyError } = await supabase
+      // Families
+      const { data: familiesData } = await supabase
         .from("families")
-        .insert({
-          name: familyName,
-          slug: familyName
-            .trim()
-            .toLowerCase()
-            .replace(/\s+/g, "-"),
-          created_by: userData.user.id,
-          migration_status: "draft",
-        })
-        .select()
-        .single();
+        .select("*")
+        .order("created_at", { ascending: false });
 
-      if (familyError) {
-        throw familyError;
-      }
+      const familiesList = (familiesData as Family[]) || [];
+      setFamilies(familiesList);
 
-      // Add family admin
-      const { error: memberError } = await supabase
+      // Counts
+      const { count: familiesCount } = await supabase
+        .from("families")
+        .select("*", { count: "exact", head: true });
+
+      const { count: membersCount } = await supabase
         .from("family_members")
-        .insert({
-          family_id: family.id,
-          user_id: userData.user.id,
-          role: "family_admin",
-          display_name: fullName,
-          is_active: true,
-        });
+        .select("*", { count: "exact", head: true });
 
-      if (memberError) {
-        throw memberError;
+      // Contributions
+      const { data: contributions } = await supabase
+        .from("contributions")
+        .select("amount")
+        .eq("status", "paid");
+
+      let totalAmount = 0;
+      if (contributions) {
+        contributions.forEach((c: { amount: number | null }) => {
+          totalAmount += c.amount ?? 0;
+        });
       }
 
-      setMessage(
-        `✅ Success! Group leader created for "${familyName}". They can now log in and add members.`
-      );
+      // Loans
+      const { data: loans } = await supabase
+        .from("loans")
+        .select("status");
 
-      setEmail("");
-      setFullName("");
-      setPassword("");
-      setFamilyName("");
-    } catch (error: unknown) {
-      const errorMessage =
-        error instanceof Error
-          ? error.message
-          : "An unexpected error occurred.";
+      const activeLoans =
+        loans?.filter((l: { status: string }) => l.status === "active")
+          .length ?? 0;
 
-      setMessage(`❌ Error: ${errorMessage}`);
+      // Migration stats
+      const { count: pending } = await supabase
+        .from("migration_records")
+        .select("*", { count: "exact", head: true })
+        .eq("status", "pending_verification");
+
+      const { count: completed } = await supabase
+        .from("migration_records")
+        .select("*", { count: "exact", head: true })
+        .eq("status", "verified");
+
+      // Activity
+      const { data: activityData } = await supabase
+        .from("activity_feed")
+        .select("id, message, created_at")
+        .order("created_at", { ascending: false })
+        .limit(10);
+
+      setActivities((activityData as ActivityItem[]) || []);
+
+      // Final stats
+      setStats({
+        totalFamilies: familiesCount ?? 0,
+        totalMembers: membersCount ?? 0,
+        totalContributions: contributions?.length ?? 0,
+        totalLoans: loans?.length ?? 0,
+        pendingVerifications: pending ?? 0,
+        completedMigrations: completed ?? 0,
+        totalAmountCollected: totalAmount,
+        activeLoans,
+      });
+    } catch (error) {
+      console.error("Admin page error:", error);
     } finally {
       setLoading(false);
     }
   };
 
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-96">
+        <div className="h-10 w-10 animate-spin rounded-full border-b-2 border-blue-600" />
+      </div>
+    );
+  }
+
   return (
-    <div className="mx-auto max-w-2xl p-6">
+    <div className="space-y-6 p-4">
+      <h1 className="text-3xl font-bold">Super Admin Dashboard</h1>
+
+      {/* STATS */}
+      <div className="grid gap-4 md:grid-cols-4">
+        <Card>
+          <CardHeader><CardTitle>Families</CardTitle></CardHeader>
+          <CardContent>{stats.totalFamilies}</CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader><CardTitle>Members</CardTitle></CardHeader>
+          <CardContent>{stats.totalMembers}</CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader><CardTitle>Loans</CardTitle></CardHeader>
+          <CardContent>{stats.totalLoans}</CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader><CardTitle>Total Collected</CardTitle></CardHeader>
+          <CardContent>
+            UGX {stats.totalAmountCollected.toLocaleString()}
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* MIDDLE */}
+      <div className="grid md:grid-cols-2 gap-4">
+        <Card>
+          <CardHeader>
+            <CardTitle>Loan Status</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <p>Active Loans: {stats.activeLoans}</p>
+            <p>Pending Verifications: {stats.pendingVerifications}</p>
+            <p>Completed Migrations: {stats.completedMigrations}</p>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle>Activity Summary</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <p>Total Contributions: {stats.totalContributions}</p>
+            <p>Total Families: {stats.totalFamilies}</p>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* ACTIVITY FEED */}
       <Card>
         <CardHeader>
-          <CardTitle>Create Group Leader (Family Admin)</CardTitle>
+          <CardTitle>Recent Activity</CardTitle>
         </CardHeader>
-
         <CardContent>
-          <div className="space-y-4">
-            <div>
-              <label className="mb-1 block text-sm font-medium">
-                Group/Family Name
-              </label>
-              <input
-                type="text"
-                value={familyName}
-                onChange={(e) => setFamilyName(e.target.value)}
-                placeholder="e.g. John Family, Smith Group"
-                className="w-full rounded-md border p-2"
-              />
-            </div>
-
-            <div>
-              <label className="mb-1 block text-sm font-medium">
-                Leader Full Name
-              </label>
-              <input
-                type="text"
-                value={fullName}
-                onChange={(e) => setFullName(e.target.value)}
-                placeholder="John Doe"
-                className="w-full rounded-md border p-2"
-              />
-            </div>
-
-            <div>
-              <label className="mb-1 block text-sm font-medium">
-                Leader Email
-              </label>
-              <input
-                type="email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                placeholder="leader@example.com"
-                className="w-full rounded-md border p-2"
-              />
-            </div>
-
-            <div>
-              <label className="mb-1 block text-sm font-medium">
-                Temporary Password
-              </label>
-              <input
-                type="password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                placeholder="Minimum 6 characters"
-                className="w-full rounded-md border p-2"
-              />
-            </div>
-
-            <Button
-              onClick={createGroupLeader}
-              disabled={loading}
-              className="w-full"
-            >
-              {loading ? "Creating..." : "Create Group Leader"}
-            </Button>
-
-            {message && (
-              <div
-                className={`rounded-md p-3 ${
-                  message.startsWith("✅")
-                    ? "bg-green-50 text-green-700"
-                    : "bg-red-50 text-red-700"
-                }`}
-              >
-                {message}
+          {activities.length === 0 ? (
+            <p className="text-gray-500">No activity yet</p>
+          ) : (
+            activities.map((a) => (
+              <div key={a.id} className="border-b py-2">
+                <p>{a.message}</p>
+                <small className="text-gray-500">
+                  {new Date(a.created_at).toLocaleString()}
+                </small>
               </div>
-            )}
-          </div>
+            ))
+          )}
+        </CardContent>
+      </Card>
+
+      {/* FAMILY LIST */}
+      <Card>
+        <CardHeader>
+          <CardTitle>Families</CardTitle>
+        </CardHeader>
+        <CardContent>
+          {families.length === 0 ? (
+            <p className="text-gray-500">No families found</p>
+          ) : (
+            families.map((f) => (
+              <div key={f.id} className="border-b py-2">
+                <p className="font-semibold">{f.name}</p>
+                <p className="text-sm text-gray-500">
+                  {f.migration_status} • {f.currency}
+                </p>
+              </div>
+            ))
+          )}
         </CardContent>
       </Card>
     </div>

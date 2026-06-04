@@ -1,5 +1,5 @@
 "use client";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { X, Copy, CheckCircle, AlertCircle } from "lucide-react";
 
@@ -9,6 +9,13 @@ interface PaymentModalProps {
   onSuccess?: () => void;
 }
 
+interface PaymentAccount {
+  id: string;
+  account_name: string;
+  account_number: string;
+  account_type?: string | null;
+}
+
 export default function PaymentModal({ isOpen, onClose, onSuccess }: PaymentModalProps) {
   const [amount, setAmount] = useState("");
   const [method, setMethod] = useState("");
@@ -16,44 +23,44 @@ export default function PaymentModal({ isOpen, onClose, onSuccess }: PaymentModa
   const [proof, setProof] = useState<File | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [message, setMessage] = useState("");
-  const [paymentAccounts, setPaymentAccounts] = useState<any[]>([]);
+  const [paymentAccounts, setPaymentAccounts] = useState<PaymentAccount[]>([]);
   const [userFamilyId, setUserFamilyId] = useState("");
   const [userMemberId, setUserMemberId] = useState("");
-  const supabase = createClient();
+  const supabase = useMemo(() => createClient(), []);
 
   useEffect(() => {
-    if (isOpen) {
-      fetchPaymentAccounts();
-    }
-  }, [isOpen]);
+    if (!isOpen) return;
 
-  const fetchPaymentAccounts = async () => {
-    try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return;
+    const fetchPaymentAccounts = async () => {
+      try {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) return;
 
-      const { data: member } = await supabase
-        .from("family_members")
-        .select("id, family_id")
-        .eq("user_id", user.id)
-        .single();
+        const { data: member } = await supabase
+          .from("family_members")
+          .select("id, family_id")
+          .eq("user_id", user.id)
+          .single();
 
-      if (member) {
-        setUserMemberId(member.id);
-        setUserFamilyId(member.family_id);
+        if (member) {
+          setUserMemberId(member.id);
+          setUserFamilyId(member.family_id);
 
-        const { data: accounts } = await supabase
-          .from("payment_accounts")
-          .select("*")
-          .eq("family_id", member.family_id)
-          .eq("is_active", true);
+          const { data: accounts } = await supabase
+            .from("payment_accounts")
+            .select("*")
+            .eq("family_id", member.family_id)
+            .eq("is_active", true);
 
-        setPaymentAccounts(accounts || []);
+          setPaymentAccounts((accounts as PaymentAccount[]) || []);
+        }
+      } catch (error) {
+        console.error("Error fetching payment accounts:", error);
       }
-    } catch (error) {
-      console.error("Error fetching payment accounts:", error);
-    }
-  };
+    };
+
+    fetchPaymentAccounts();
+  }, [isOpen, supabase]);
 
   const copyToClipboard = (text: string) => {
     navigator.clipboard.writeText(text);
@@ -117,8 +124,9 @@ export default function PaymentModal({ isOpen, onClose, onSuccess }: PaymentModa
         setMessage("");
       }, 2000);
       
-    } catch (error: any) {
-      setMessage(`❌ Error: ${error.message}`);
+    } catch (error: unknown) {
+      const errorMessage = error instanceof Error ? error.message : "An unexpected error occurred";
+      setMessage(`❌ Error: ${errorMessage}`);
     } finally {
       setSubmitting(false);
     }

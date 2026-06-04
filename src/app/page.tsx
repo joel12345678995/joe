@@ -4,9 +4,9 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { 
   Shield, Users, Wallet, Landmark, Eye, 
-  Bell, Upload, BarChart3, Settings, Lock,
-  TrendingUp, Clock, CheckCircle, ArrowRight,
-  Star, Sparkles, Rocket, Heart, Crown, Zap
+  Bell, Upload,
+  TrendingUp, Clock, ArrowRight,
+  Star, Sparkles, Rocket, Heart, Crown
 } from "lucide-react";
 import { useState, useEffect } from "react";
 
@@ -301,7 +301,7 @@ export default function Home() {
                       <Star key={i} className="h-5 w-5 fill-yellow-400 text-yellow-400" />
                     ))}
                   </div>
-                  <p className="text-gray-700 mb-4 italic">"{testimonial.content}"</p>
+                  <p className="text-gray-700 mb-4 italic">“{testimonial.content}”</p>
                   <div className="border-t pt-4">
                     <p className="font-semibold text-gray-900">{testimonial.name}</p>
                     <p className="text-sm text-gray-500">{testimonial.role}</p>
