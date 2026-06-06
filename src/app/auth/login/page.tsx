@@ -28,6 +28,22 @@ export default function LoginPage() {
       if (error) throw error;
       
       if (data?.session) {
+        // Persist session tokens to httpOnly cookies so middleware and server-side
+        // code can detect authenticated requests.
+        try {
+          await fetch("/api/auth/set-cookie", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              access_token: data.session.access_token,
+              refresh_token: data.session.refresh_token,
+              expires_at: data.session.expires_at,
+            }),
+          });
+        } catch (e) {
+          console.warn("Failed to set auth cookies:", e);
+        }
+
         router.push("/dashboard");
         router.refresh();
       }
