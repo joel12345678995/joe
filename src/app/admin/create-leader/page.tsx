@@ -1,237 +1,280 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { FormEvent, useMemo, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
+import { slugify } from "@/lib/utils";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import {
-  Users,
-  Building2,
-  FileText,
-  Activity,
-  DollarSign,
-  TrendingUp,
-} from "lucide-react";
 
-type Family = {
-  id: string;
-  name: string;
-  description?: string;
-  currency?: string;
-  transparency_mode?: string;
-  migration_status?: string;
-  created_at: string;
-};
+type TransparencyMode = "full" | "limited" | "private";
+type StatusType = "success" | "error" | "";
 
-type ActivityItem = {
-  id: string;
-  message: string;
-  created_at: string;
-};
+export default function CreateLeaderPage() {
+  const supabase = useMemo(() => createClient(), []);
+  const [familyName, setFamilyName] = useState("");
+  const [familyDescription, setFamilyDescription] = useState("");
+  const [currency, setCurrency] = useState("UGX");
+  const [transparencyMode, setTransparencyMode] = useState<TransparencyMode>("full");
+  const [leaderName, setLeaderName] = useState("");
+  const [leaderEmail, setLeaderEmail] = useState("");
+  const [leaderPassword, setLeaderPassword] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [statusMessage, setStatusMessage] = useState("");
+  const [statusType, setStatusType] = useState<StatusType>("");
 
-export default function AdminPage() {
-  const supabase = createClient();
+  const resetForm = () => {
+    setFamilyName("");
+    setFamilyDescription("");
+    setCurrency("UGX");
+    setTransparencyMode("full");
+    setLeaderName("");
+    setLeaderEmail("");
+    setLeaderPassword("");
+  };
 
-  const [loading, setLoading] = useState(true);
-  const [families, setFamilies] = useState<Family[]>([]);
-  const [activities, setActivities] = useState<ActivityItem[]>([]);
+  const createUniqueSlug = async (baseSlug: string) => {
+    let slug = baseSlug;
+    let index = 1;
 
-  const [stats, setStats] = useState({
-    totalFamilies: 0,
-    totalMembers: 0,
-    totalContributions: 0,
-    totalLoans: 0,
-    pendingVerifications: 0,
-    completedMigrations: 0,
-    totalAmountCollected: 0,
-    activeLoans: 0,
-  });
-
-  useEffect(() => {
-    void loadData();
-  }, []);
-
-  const loadData = async () => {
-    setLoading(true);
-
-    try {
-      // Families
-      const { data: familiesData } = await supabase
+    while (true) {
+      const { count, error } = await supabase
         .from("families")
-        .select("*")
-        .order("created_at", { ascending: false });
+        .select("id", { count: "exact", head: true })
+        .eq("slug", slug);
 
-      const familiesList = (familiesData as Family[]) || [];
-      setFamilies(familiesList);
-
-      // Counts
-      const { count: familiesCount } = await supabase
-        .from("families")
-        .select("*", { count: "exact", head: true });
-
-      const { count: membersCount } = await supabase
-        .from("family_members")
-        .select("*", { count: "exact", head: true });
-
-      // Contributions
-      const { data: contributions } = await supabase
-        .from("contributions")
-        .select("amount")
-        .eq("status", "paid");
-
-      let totalAmount = 0;
-      if (contributions) {
-        contributions.forEach((c: { amount: number | null }) => {
-          totalAmount += c.amount ?? 0;
-        });
+      if (error) {
+        throw error;
       }
 
-      // Loans
-      const { data: loans } = await supabase
-        .from("loans")
-        .select("status");
+      if (!count) {
+        return slug;
+      }
 
-      const activeLoans =
-        loans?.filter((l: { status: string }) => l.status === "active")
-          .length ?? 0;
+      slug = `${baseSlug}-${index}`;
+      index += 1;
+    }
+  };
 
-      // Migration stats
-      const { count: pending } = await supabase
-        .from("migration_records")
-        .select("*", { count: "exact", head: true })
-        .eq("status", "pending_verification");
+  const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    setStatusType("");
+    setStatusMessage("");
+    setLoading(true);
 
-      const { count: completed } = await supabase
-        .from("migration_records")
-        .select("*", { count: "exact", head: true })
-        .eq("status", "verified");
+    if (!familyName.trim() || !leaderName.trim() || !leaderEmail.trim() || !leaderPassword.trim()) {
+      setStatusType("error");
+      setStatusMessage("Family name, leader name, email and password are required.");
+      setLoading(false);
+      return;
+    }
 
-      // Activity
-      const { data: activityData } = await supabase
-        .from("activity_feed")
-        .select("id, message, created_at")
-        .order("created_at", { ascending: false })
-        .limit(10);
+    try {
+      const baseSlug = slugify(familyName);
+      const slug = await createUniqueSlug(baseSlug);
 
-      setActivities((activityData as ActivityItem[]) || []);
-
-      // Final stats
-      setStats({
-        totalFamilies: familiesCount ?? 0,
-        totalMembers: membersCount ?? 0,
-        totalContributions: contributions?.length ?? 0,
-        totalLoans: loans?.length ?? 0,
-        pendingVerifications: pending ?? 0,
-        completedMigrations: completed ?? 0,
-        totalAmountCollected: totalAmount,
-        activeLoans,
+      const { data: signUpData, error: signUpError } = await supabase.auth.signUp({
+        email: leaderEmail.trim(),
+        password: leaderPassword,
+        options: {
+          data: {
+            full_name: leaderName.trim(),
+          },
+        },
       });
-    } catch (error) {
-      console.error("Admin page error:", error);
+
+      if (signUpError) {
+        throw signUpError;
+      }
+
+      const userId = signUpData.user?.id;
+      if (!userId) {
+        throw new Error("Failed to create leader authentication user.");
+      }
+
+      const { data: currentUserData, error: currentUserError } = await supabase.auth.getUser();
+      if (currentUserError) {
+        throw currentUserError;
+      }
+
+      const currentUserId = currentUserData?.user?.id;
+      if (!currentUserId) {
+        throw new Error("Unable to determine current admin user.");
+      }
+
+      const { data: familyData, error: familyError } = await supabase
+        .from("families")
+        .insert([
+          {
+            name: familyName.trim(),
+            slug,
+            description: familyDescription.trim() || null,
+            currency: currency.trim() || "UGX",
+            transparency_mode: transparencyMode,
+            created_by: currentUserId,
+          },
+        ])
+        .select("id")
+        .single();
+
+      if (familyError || !familyData?.id) {
+        throw familyError ?? new Error("Failed to create family record.");
+      }
+
+      const { error: memberError } = await supabase.from("family_members").insert([
+        {
+          family_id: familyData.id,
+          user_id: userId,
+          role: "family_admin",
+          display_name: leaderName.trim(),
+          initial_balance: 0,
+          contribution_streak: 0,
+          total_contributed: 0,
+          is_active: true,
+        },
+      ]);
+
+      if (memberError) {
+        throw memberError;
+      }
+
+      setStatusType("success");
+      setStatusMessage("Group leader created successfully.");
+      resetForm();
+    } catch (error: unknown) {
+      console.error("Create group leader error:", error);
+      setStatusType("error");
+      setStatusMessage(
+        error instanceof Error
+          ? error.message
+          : "Unable to create group leader. Please check your inputs and try again."
+      );
     } finally {
       setLoading(false);
     }
   };
 
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center h-96">
-        <div className="h-10 w-10 animate-spin rounded-full border-b-2 border-blue-600" />
-      </div>
-    );
-  }
-
   return (
     <div className="space-y-6 p-4">
-      <h1 className="text-3xl font-bold">Super Admin Dashboard</h1>
-
-      {/* STATS */}
-      <div className="grid gap-4 md:grid-cols-4">
-        <Card>
-          <CardHeader><CardTitle>Families</CardTitle></CardHeader>
-          <CardContent>{stats.totalFamilies}</CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader><CardTitle>Members</CardTitle></CardHeader>
-          <CardContent>{stats.totalMembers}</CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader><CardTitle>Loans</CardTitle></CardHeader>
-          <CardContent>{stats.totalLoans}</CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader><CardTitle>Total Collected</CardTitle></CardHeader>
-          <CardContent>
-            UGX {stats.totalAmountCollected.toLocaleString()}
-          </CardContent>
-        </Card>
+      <div>
+        <h1 className="text-3xl font-bold text-gray-900">Create Group Leader</h1>
+        <p className="mt-1 text-gray-600">Create a Family Admin user, family record, and assign the leader to the family.</p>
       </div>
 
-      {/* MIDDLE */}
-      <div className="grid md:grid-cols-2 gap-4">
-        <Card>
-          <CardHeader>
-            <CardTitle>Loan Status</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <p>Active Loans: {stats.activeLoans}</p>
-            <p>Pending Verifications: {stats.pendingVerifications}</p>
-            <p>Completed Migrations: {stats.completedMigrations}</p>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader>
-            <CardTitle>Activity Summary</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <p>Total Contributions: {stats.totalContributions}</p>
-            <p>Total Families: {stats.totalFamilies}</p>
-          </CardContent>
-        </Card>
-      </div>
-
-      {/* ACTIVITY FEED */}
       <Card>
         <CardHeader>
-          <CardTitle>Recent Activity</CardTitle>
+          <CardTitle>Leader & Family Details</CardTitle>
         </CardHeader>
         <CardContent>
-          {activities.length === 0 ? (
-            <p className="text-gray-500">No activity yet</p>
-          ) : (
-            activities.map((a) => (
-              <div key={a.id} className="border-b py-2">
-                <p>{a.message}</p>
-                <small className="text-gray-500">
-                  {new Date(a.created_at).toLocaleString()}
-                </small>
-              </div>
-            ))
-          )}
-        </CardContent>
-      </Card>
+          {statusMessage ? (
+            <div
+              className={`mb-6 rounded-md px-4 py-3 text-sm ${
+                statusType === "success"
+                  ? "bg-emerald-50 text-emerald-700"
+                  : "bg-red-50 text-red-700"
+              }`}
+            >
+              {statusMessage}
+            </div>
+          ) : null}
 
-      {/* FAMILY LIST */}
-      <Card>
-        <CardHeader>
-          <CardTitle>Families</CardTitle>
-        </CardHeader>
-        <CardContent>
-          {families.length === 0 ? (
-            <p className="text-gray-500">No families found</p>
-          ) : (
-            families.map((f) => (
-              <div key={f.id} className="border-b py-2">
-                <p className="font-semibold">{f.name}</p>
-                <p className="text-sm text-gray-500">
-                  {f.migration_status} • {f.currency}
-                </p>
-              </div>
-            ))
-          )}
+          <form onSubmit={handleSubmit} className="space-y-6">
+            <div className="grid gap-6 md:grid-cols-2">
+              <label className="block">
+                <span className="text-sm font-medium text-gray-700">Family Name</span>
+                <input
+                  type="text"
+                  value={familyName}
+                  onChange={(event) => setFamilyName(event.target.value)}
+                  className="mt-2 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-100"
+                  placeholder="Enter family name"
+                  required
+                />
+              </label>
+              <label className="block">
+                <span className="text-sm font-medium text-gray-700">Currency</span>
+                <input
+                  type="text"
+                  value={currency}
+                  onChange={(event) => setCurrency(event.target.value)}
+                  className="mt-2 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-100"
+                  placeholder="UGX"
+                  required
+                />
+              </label>
+            </div>
+
+            <div className="grid gap-6 md:grid-cols-2">
+              <label className="block">
+                <span className="text-sm font-medium text-gray-700">Leader Name</span>
+                <input
+                  type="text"
+                  value={leaderName}
+                  onChange={(event) => setLeaderName(event.target.value)}
+                  className="mt-2 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-100"
+                  placeholder="Enter group leader name"
+                  required
+                />
+              </label>
+              <label className="block">
+                <span className="text-sm font-medium text-gray-700">Leader Email</span>
+                <input
+                  type="email"
+                  value={leaderEmail}
+                  onChange={(event) => setLeaderEmail(event.target.value)}
+                  className="mt-2 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-100"
+                  placeholder="leader@example.com"
+                  required
+                />
+              </label>
+            </div>
+
+            <div className="grid gap-6 md:grid-cols-2">
+              <label className="block">
+                <span className="text-sm font-medium text-gray-700">Password</span>
+                <input
+                  type="password"
+                  value={leaderPassword}
+                  onChange={(event) => setLeaderPassword(event.target.value)}
+                  className="mt-2 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-100"
+                  placeholder="Create a password"
+                  minLength={8}
+                  required
+                />
+              </label>
+              <label className="block">
+                <span className="text-sm font-medium text-gray-700">Transparency Mode</span>
+                <select
+                  value={transparencyMode}
+                  onChange={(event) => setTransparencyMode(event.target.value as TransparencyMode)}
+                  className="mt-2 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-100"
+                >
+                  <option value="full">Full</option>
+                  <option value="limited">Limited</option>
+                  <option value="private">Private</option>
+                </select>
+              </label>
+            </div>
+
+            <label className="block">
+              <span className="text-sm font-medium text-gray-700">Family Description</span>
+              <textarea
+                value={familyDescription}
+                onChange={(event) => setFamilyDescription(event.target.value)}
+                className="mt-2 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-100"
+                placeholder="Optional family description"
+                rows={4}
+              />
+            </label>
+
+            <div className="flex items-center justify-end gap-3">
+              <button
+                type="submit"
+                disabled={loading}
+                className="inline-flex items-center justify-center rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-blue-400"
+              >
+                {loading ? "Creating..." : "Create Group Leader"}
+              </button>
+            </div>
+          </form>
         </CardContent>
       </Card>
     </div>

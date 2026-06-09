@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import Link from "next/link";
@@ -31,12 +31,15 @@ export default function DashboardLayout({
   const [user, setUser] = useState<any>(null);
   const [userRole, setUserRole] = useState<string>("member");
   const [loading, setLoading] = useState(true);
+  const [authInitializing, setAuthInitializing] = useState(true);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [showPaymentModal, setShowPaymentModal] = useState(false);
   const router = useRouter();
-  const supabase = createClient();
+  const supabase = useMemo(() => createClient(), []);
 
   useEffect(() => {
+    let isMounted = true;
+
     const getUserAndRole = async () => {
       try {
         const { data: { user }, error } = await supabase.auth.getUser();
@@ -44,59 +47,65 @@ export default function DashboardLayout({
           router.push("/auth/login");
           return;
         }
-        
+
+        if (!isMounted) return;
         setUser(user);
-        
-        const { data: profile, error: profileError } = await supabase
+
+        const { data: profile } = await supabase
           .from("profiles")
           .select("is_super_admin")
           .eq("id", user.id)
           .single();
-        
+
+        if (!isMounted) return;
         if (profile?.is_super_admin === true) {
           setUserRole("super_admin");
-          setLoading(false);
-          return;
-        }
-        
-        const { data: familyMember, error: fmError } = await supabase
-          .from("family_members")
-          .select("role")
-          .eq("user_id", user.id)
-          .maybeSingle();
-        
-        if (familyMember?.role) {
-          setUserRole(familyMember.role);
         } else {
-          setUserRole("member");
+          const { data: familyMember } = await supabase
+            .from("family_members")
+            .select("role")
+            .eq("user_id", user.id)
+            .maybeSingle();
+
+          if (!isMounted) return;
+          if (familyMember?.role) {
+            setUserRole(familyMember.role);
+          } else {
+            setUserRole("member");
+          }
         }
-        
       } catch (error) {
         console.error("Auth error:", error);
         router.push("/auth/login");
       } finally {
-        setLoading(false);
+        if (isMounted) {
+          setAuthInitializing(false);
+          setLoading(false);
+        }
       }
     };
-    
+
     getUserAndRole();
-    
+
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       if (!session) {
         router.push("/auth/login");
-      } else {
+      } else if (isMounted) {
         setUser(session.user);
       }
     });
-    
-    return () => subscription.unsubscribe();
+
+    return () => {
+      isMounted = false;
+      subscription.unsubscribe();
+    };
   }, [router, supabase]);
 
   const handleLogout = async () => {
     try {
       await supabase.auth.signOut();
-      router.push("/auth/login");
       router.refresh();
+      router.push("/auth/login");
     } catch (error) {
       console.error("Logout error:", error);
     }
@@ -164,15 +173,7 @@ export default function DashboardLayout({
     }
   };
 
-  if (loading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
-      </div>
-    );
-  }
-
-  if (!user) return null;
+  if (!user && !authInitializing) return null;
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -198,10 +199,19 @@ export default function DashboardLayout({
               JoeFamily Treasury
             </h1>
             <div className="mt-2">
-              <p className="text-xs text-gray-500 truncate">{user.email}</p>
-              <span className={`inline-block mt-1 px-2 py-0.5 rounded-full text-xs font-medium ${getRoleBadge()}`}>
-                {getRoleLabel()}
-              </span>
+              {authInitializing || !user ? (
+                <div className="space-y-2">
+                  <div className="h-3 w-32 rounded-full bg-gray-200 animate-pulse" />
+                  <div className="h-5 w-24 rounded-full bg-gray-200 animate-pulse" />
+                </div>
+              ) : (
+                <>
+                  <p className="text-xs text-gray-500 truncate">{user.email}</p>
+                  <span className={`inline-block mt-1 px-2 py-0.5 rounded-full text-xs font-medium ${getRoleBadge()}`}>
+                    {getRoleLabel()}
+                  </span>
+                </>
+              )}
             </div>
           </div>
           

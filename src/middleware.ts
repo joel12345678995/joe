@@ -5,14 +5,27 @@ function hasAuthCookie(request: NextRequest) {
 }
 
 export async function middleware(request: NextRequest) {
-  const isAuthPage = request.nextUrl.pathname.startsWith("/auth");
-  const isDashboardPage = request.nextUrl.pathname.startsWith("/dashboard");
+  const pathname = request.nextUrl.pathname;
+  
+  // Skip middleware for static files and internal Next.js requests
+  if (
+    pathname.startsWith("/_next") ||
+    pathname.startsWith("/api") ||
+    pathname === "/favicon.ico" ||
+    pathname.match(/\.(js|css|png|jpg|jpeg|gif|ico|svg|webp|woff|woff2|ttf|eot)$/)
+  ) {
+    return NextResponse.next();
+  }
+
+  const isAuthPage = pathname.startsWith("/auth");
+  const isDashboardPage = pathname.startsWith("/dashboard");
+  const isAdminPage = pathname.startsWith("/admin");
   const hasAuth = hasAuthCookie(request);
 
-  if (!hasAuth && isDashboardPage) {
+  if (!hasAuth && (isDashboardPage || isAdminPage)) {
     const url = request.nextUrl.clone();
     url.pathname = "/auth/login";
-    url.searchParams.set("redirect", request.nextUrl.pathname);
+    url.searchParams.set("redirect", pathname);
     return NextResponse.redirect(url);
   }
 
@@ -26,5 +39,5 @@ export async function middleware(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/dashboard/:path*", "/auth/:path*"],
+  matcher: ["/dashboard/:path*", "/auth/:path*", "/admin/:path*"],
 };

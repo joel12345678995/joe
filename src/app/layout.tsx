@@ -19,11 +19,11 @@ const geistMono = localFont({
 export const metadata: Metadata = {
   title: "Joe Family Treasury",
   description: "Treasury management for family contributions, loans, and transparency.",
-  icons: {
-    icon: "/favicon.ico",
-    shortcut: "/favicon.ico",
-    apple: "/favicon.ico",
-  },
+  icons: [
+    { rel: "icon", url: "/favicon.ico", type: "image/x-icon" },
+    { rel: "shortcut icon", url: "/favicon.ico" },
+    { rel: "apple-touch-icon", url: "/favicon.ico" },
+  ],
 };
 
 export default function RootLayout({
